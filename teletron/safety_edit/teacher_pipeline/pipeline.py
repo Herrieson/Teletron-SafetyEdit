@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from pathlib import Path
 from typing import Any, Iterable
@@ -71,22 +72,22 @@ class TeacherPipeline:
 
     def run(
         self,
-        image_paths: Iterable[str | Path],
+        image_paths: Iterable[str | Path | dict[str, Any]],
         limit: int | None = None,
         resume: bool = False,
     ) -> list[dict[str, Any]]:
         existing_ids = self.writer.existing_ids() if resume else set()
         rows = []
         processed = 0
-        for image_path in image_paths:
-            image_path = Path(image_path)
-            sample_id = make_sample_id(image_path)
+        for item in image_paths:
+            image_path, source_metadata = normalize_input_item(item)
+            sample_id = source_metadata.get("id") or make_sample_id(image_path)
             if sample_id in existing_ids:
                 logger.info("Skip existing sample %s (%s)", sample_id, image_path)
                 continue
 
             try:
-                row = self.process_one(image_path, sample_id=sample_id)
+                row = self.process_one(image_path, sample_id=sample_id, source_metadata=source_metadata)
             except Exception:
                 logger.exception("Failed to process image: %s", image_path)
                 raise
@@ -98,9 +99,15 @@ class TeacherPipeline:
                 break
         return rows
 
-    def process_one(self, image_path: str | Path, sample_id: str | None = None) -> dict[str, Any] | None:
+    def process_one(
+        self,
+        image_path: str | Path,
+        sample_id: str | None = None,
+        source_metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         image_path = Path(image_path)
         sample_id = sample_id or make_sample_id(image_path)
+        source_metadata = source_metadata or {}
         image = Image.open(image_path).convert("RGB")
 
         plan = self._run_vlm(image_path, image)
@@ -116,7 +123,7 @@ class TeacherPipeline:
             plan=plan,
             editor_result=editor_result,
             verifier_result=verifier_result,
-            metadata=self.metadata.copy(),
+            metadata={**self.metadata.copy(), "source": source_metadata},
         )
         return self.writer.write(sample)
 
@@ -160,7 +167,7 @@ class TeacherPipeline:
         return result
 
 
-def discover_images(input_path: str | Path, extensions: set[str] | None = None) -> list[Path]:
+def discover_images(input_path: str | Path, extensions: set[str] | None = None) -> list[Path | dict[str, Any]]:
     input_path = Path(input_path)
     extensions = extensions or IMAGE_EXTENSIONS
     if input_path.is_file():
@@ -178,20 +185,32 @@ def discover_images(input_path: str | Path, extensions: set[str] | None = None) 
     return sorted(paths)
 
 
-def _read_jsonl_image_paths(path: Path) -> list[Path]:
-    import json
-
-    paths = []
+def _read_jsonl_image_paths(path: Path) -> list[dict[str, Any]]:
+    rows = []
     with path.open("r", encoding="utf-8") as f:
         for line in f:
             if not line.strip():
                 continue
             row = json.loads(line)
-            paths.append(Path(row["image_path"]))
-    return paths
+            if "image_path" not in row:
+                raise ValueError(f"Missing image_path in {path}: {row}")
+            image_path = Path(row["image_path"])
+            if not image_path.is_absolute():
+                image_path = path.parent / image_path
+            row = {**row, "image_path": str(image_path)}
+            rows.append(row)
+    return rows
+
+
+def normalize_input_item(item: str | Path | dict[str, Any]) -> tuple[Path, dict[str, Any]]:
+    if isinstance(item, dict):
+        metadata = dict(item)
+        image_path = Path(metadata["image_path"])
+        return image_path, metadata
+    image_path = Path(item)
+    return image_path, {"image_path": str(image_path)}
 
 
 def make_sample_id(image_path: Path) -> str:
     digest = hashlib.sha1(str(image_path).encode("utf-8")).hexdigest()[:10]
     return f"{image_path.stem}_{digest}"
-

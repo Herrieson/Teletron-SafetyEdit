@@ -1,0 +1,44 @@
+# Reference plan for the first safety-edit source manifests.
+# This file is documentation-oriented; use the commands in
+# documents/safety_edit/datasets.md to materialize the manifests.
+
+phase: phase0_debug
+
+sources:
+  unsafe_bench_debug:
+    command: hf
+    preset: unsafe_bench
+    split: train
+    streaming: true
+    output_dir: /tmp/safety_edit_sources/unsafe_bench_debug
+    limit: 100
+
+  coco_safe_debug:
+    command: hf
+    preset: coco_caption2017
+    split: train
+    streaming: true
+    output_dir: /tmp/safety_edit_sources/coco_safe_debug
+    limit: 100
+
+  t2i_safety_debug:
+    command: hf
+    preset: t2i_safety
+    split: train
+    streaming: true
+    output_dir: /tmp/safety_edit_sources/t2i_safety_debug
+    limit: 100
+
+teacher_runs:
+  static_check:
+    config: examples/teleai/config/safety_edit_teacher_static.yaml
+    input: /tmp/safety_edit_sources/unsafe_bench_debug/source_manifest.jsonl
+    output_dir: /tmp/safety_edit_teacher_unsafe_bench_static
+    limit: 10
+
+  qwen_debug:
+    config: examples/teleai/config/safety_edit_teacher_qwen.yaml
+    input: /tmp/safety_edit_sources/unsafe_bench_debug/source_manifest.jsonl
+    output_dir: /tmp/safety_edit_teacher_unsafe_bench_qwen
+    limit: 10
+
