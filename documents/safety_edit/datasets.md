@@ -169,21 +169,36 @@ python3 -m teletron.safety_edit.source_data.prepare inspect-hf \
   --limit 3
 ```
 
+实际字段已验证为：
+
+```text
+image: PIL image
+safety_label: "Safe" / "Unsafe"
+category: e.g. Hate
+source: e.g. Laion5B
+text: source caption/text
+```
+
+如果 streaming 退出时触发 Hugging Face/Xet 连接或 Python finalizing 崩溃，但已经打印出样本字段，可以继续用非 streaming 方式准备小样本。
+
 其他候选：
 
 ```bash
 python3 -m teletron.safety_edit.source_data.prepare inspect-hf \
   --dataset OpenSafetyLab/t2i_safety_dataset \
   --split train \
-  --streaming \
   --limit 3
 
 python3 -m teletron.safety_edit.source_data.prepare inspect-hf \
   --dataset lmms-lab/COCO-Caption2017 \
-  --split train \
+  --split val \
   --streaming \
   --limit 3
 ```
+
+COCO-Caption2017 当前可用 split 是 `val` 和 `test`，不是 `train`。
+
+T2ISafety 是分卷 zip，当前不要用 `--streaming`；如果本地缓存里有坏的 zip 分片，使用 `--download-mode force_redownload` 重下。
 
 ## 准备 Hugging Face 数据
 
@@ -193,7 +208,6 @@ UnsafeBench：
 python3 -m teletron.safety_edit.source_data.prepare hf \
   --preset unsafe_bench \
   --split train \
-  --streaming \
   --output-dir /tmp/safety_edit_sources/unsafe_bench_debug \
   --limit 100
 ```
@@ -204,7 +218,7 @@ T2ISafety：
 python3 -m teletron.safety_edit.source_data.prepare hf \
   --preset t2i_safety \
   --split train \
-  --streaming \
+  --download-mode force_redownload \
   --output-dir /tmp/safety_edit_sources/t2i_safety_debug \
   --limit 100
 ```
@@ -214,7 +228,7 @@ COCO safe no-op：
 ```bash
 python3 -m teletron.safety_edit.source_data.prepare hf \
   --preset coco_caption2017 \
-  --split train \
+  --split val \
   --streaming \
   --output-dir /tmp/safety_edit_sources/coco_safe_debug \
   --limit 100
@@ -272,4 +286,3 @@ Held-out:
   SafeTag-VL-3K 300
   Meme-Safety-Bench 300
 ```
-

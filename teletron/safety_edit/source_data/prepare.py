@@ -43,6 +43,7 @@ PRESETS = {
     "unsafe_bench": {
         "dataset": "yiting/UnsafeBench",
         "image_field": "image",
+        "safe_field": "safety_label",
         "label_candidates": ["label", "safety_label", "safe_label", "unsafe_label", "category"],
         "risk_candidates": ["category", "risk_type", "unsafe_category", "class"],
     },
@@ -54,6 +55,7 @@ PRESETS = {
     },
     "coco_caption2017": {
         "dataset": "lmms-lab/COCO-Caption2017",
+        "split": "val",
         "image_field": "image",
         "label_value": "safe",
         "risk_value": "none",
@@ -89,6 +91,11 @@ def parse_args() -> argparse.Namespace:
     hf.add_argument("--streaming", action="store_true")
     hf.add_argument("--limit", type=int, default=1000)
     hf.add_argument("--trust-remote-code", action="store_true")
+    hf.add_argument(
+        "--download-mode",
+        default=None,
+        choices=["reuse_dataset_if_exists", "reuse_cache_if_exists", "force_redownload"],
+    )
 
     inspect = subparsers.add_parser("inspect-hf", help="Print first rows/fields from a Hugging Face dataset.")
     inspect.add_argument("--dataset", required=True)
@@ -96,6 +103,11 @@ def parse_args() -> argparse.Namespace:
     inspect.add_argument("--streaming", action="store_true")
     inspect.add_argument("--limit", type=int, default=3)
     inspect.add_argument("--trust-remote-code", action="store_true")
+    inspect.add_argument(
+        "--download-mode",
+        default=None,
+        choices=["reuse_dataset_if_exists", "reuse_cache_if_exists", "force_redownload"],
+    )
 
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     return parser.parse_args()
@@ -163,12 +175,17 @@ def prepare_hf(args: argparse.Namespace) -> int:
     images_dir = output_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
 
+    split = args.split
+    if split == "train" and preset.get("split") is not None:
+        split = preset["split"]
     load_kwargs = {
-        "split": args.split,
+        "split": split,
         "streaming": args.streaming,
     }
     if args.trust_remote_code:
         load_kwargs["trust_remote_code"] = True
+    if args.download_mode is not None:
+        load_kwargs["download_mode"] = args.download_mode
     ds = datasets.load_dataset(dataset_name, **load_kwargs)
 
     image_field = args.image_field or preset.get("image_field") or "image"
@@ -195,9 +212,13 @@ def prepare_hf(args: argparse.Namespace) -> int:
             else preset.get("risk_value", first_existing(sample, preset.get("risk_candidates", [])))
         )
         safe_flag = (
-            bool(sample.get(args.safe_field))
+            parse_safe_value(sample.get(args.safe_field))
             if args.safe_field and args.safe_field in sample
-            else preset.get("safe_flag", infer_safe_flag(source_label, risk_type))
+            else (
+                parse_safe_value(sample.get(preset["safe_field"]))
+                if preset.get("safe_field") in sample
+                else preset.get("safe_flag", infer_safe_flag(source_label, risk_type))
+            )
         )
 
         row = SourceRow(
@@ -223,6 +244,8 @@ def inspect_hf(args: argparse.Namespace) -> None:
     }
     if args.trust_remote_code:
         load_kwargs["trust_remote_code"] = True
+    if args.download_mode is not None:
+        load_kwargs["download_mode"] = args.download_mode
     ds = datasets.load_dataset(args.dataset, **load_kwargs)
     for idx, sample in enumerate(ds):
         if idx >= args.limit:
@@ -275,6 +298,21 @@ def infer_safe_flag(source_label: Any | None, risk_type: Any | None) -> bool | N
     return None
 
 
+def parse_safe_value(value: Any | None) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"safe", "benign", "normal", "none", "true", "1", "yes"}:
+        return True
+    if text in {"unsafe", "harmful", "risk", "false", "0", "no"}:
+        return False
+    return infer_safe_flag(text, None)
+
+
 def summarize_sample(sample: dict[str, Any], exclude: set[str]) -> dict[str, Any]:
     metadata = {}
     for key, value in sample.items():
@@ -322,4 +360,3 @@ def require_datasets() -> Any:
 
 if __name__ == "__main__":
     main()
-
