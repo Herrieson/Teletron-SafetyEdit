@@ -4,6 +4,7 @@ yunchang==0.6.0
 numpy==1.26.4
 omegaconf
 huggingface_hub==0.27.0
+datasets
 safetensors==0.4.5
 einops==0.8.0
 transformers==4.47.1
