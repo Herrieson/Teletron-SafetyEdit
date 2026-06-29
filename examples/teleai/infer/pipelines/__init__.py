@@ -1,0 +1,2 @@
+from .pipeline_i2v import WanVideoI2VPipeline
+from .pipeline_i2v_BF16 import WanVideoI2VNewCodebookPipeline_BF16
