@@ -60,6 +60,7 @@ dependencies = [
     "easydict",
     "cattrs",
     "func_timeout",
+    "accelerate>=1.14.0",
 ]
 
 [project.urls]
