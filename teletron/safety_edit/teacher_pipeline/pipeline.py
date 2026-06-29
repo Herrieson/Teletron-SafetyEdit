@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import logging
 from pathlib import Path
@@ -110,7 +111,7 @@ class TeacherPipeline:
         source_metadata = source_metadata or {}
         image = Image.open(image_path).convert("RGB")
 
-        plan = self._run_vlm(image_path, image)
+        plan = self._run_vlm(image_path, image, source_metadata)
         if self.prompt_normalizer is not None:
             plan.teacher_prompt = self.prompt_normalizer.normalize(plan.teacher_prompt, plan=plan, image_path=image_path)
 
@@ -127,10 +128,13 @@ class TeacherPipeline:
         )
         return self.writer.write(sample)
 
-    def _run_vlm(self, image_path: Path, image: Image.Image) -> TeacherPlan:
+    def _run_vlm(self, image_path: Path, image: Image.Image, source_metadata: dict[str, Any] | None = None) -> TeacherPlan:
         if not hasattr(self.vlm, "plan"):
             raise TypeError(f"VLM adapter must implement plan(image_path, image), got {type(self.vlm)}")
-        plan = self.vlm.plan(image_path=image_path, image=image)
+        plan_kwargs = {"image_path": image_path, "image": image}
+        if accepts_keyword(self.vlm.plan, "source_metadata"):
+            plan_kwargs["source_metadata"] = source_metadata or {}
+        plan = self.vlm.plan(**plan_kwargs)
         if not isinstance(plan, TeacherPlan):
             raise TypeError(f"VLM adapter must return TeacherPlan, got {type(plan)}")
         if plan.safe_flag and not plan.teacher_prompt:
@@ -197,7 +201,7 @@ def _read_jsonl_image_paths(path: Path) -> list[dict[str, Any]]:
             image_path = Path(row["image_path"])
             if not image_path.is_absolute():
                 image_path = path.parent / image_path
-            row = {**row, "image_path": str(image_path)}
+            row = {**row, "image_path": str(image_path), "manifest_root": str(path.parent)}
             rows.append(row)
     return rows
 
@@ -214,3 +218,10 @@ def normalize_input_item(item: str | Path | dict[str, Any]) -> tuple[Path, dict[
 def make_sample_id(image_path: Path) -> str:
     digest = hashlib.sha1(str(image_path).encode("utf-8")).hexdigest()[:10]
     return f"{image_path.stem}_{digest}"
+
+
+def accepts_keyword(func: Any, keyword: str) -> bool:
+    signature = inspect.signature(func)
+    if keyword in signature.parameters:
+        return True
+    return any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values())

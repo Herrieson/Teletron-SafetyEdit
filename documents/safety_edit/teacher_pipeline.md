@@ -274,12 +274,13 @@ editor:
 
 ## 两张或四张 H100 的建议跑法
 
-第一版建议优先稳定，不要过早做并发：
+第一版建议优先稳定，不要过早做并发。不要在同一个进程里同时常驻 Qwen3.6-27B 和 Qwen-Image-Edit；两者一起加载很容易把单张 H100 塞满。
 
 ```text
 2 张 H100:
-  方案 A: device_map=auto 串行跑 Qwen3.6 + Qwen-Image-Edit
-  方案 B: 先单独生成 VLM plan/hidden，再单独跑 editor 补 condition/output
+  推荐: 两阶段运行
+    stage 1: 只跑 Qwen3.6 VLM，生成 teacher_prompt/safe_flag/vlm_hidden
+    stage 2: 释放 VLM 后只跑 Qwen-Image-Edit，读取 stage 1 manifest 补 condition/output
 
 4 张 H100:
   GPU 0-1: Qwen3.6-27B
@@ -288,6 +289,40 @@ editor:
 ```
 
 如果 Qwen3.6 和 Qwen-Image-Edit 同进程争显存，优先拆成两个阶段或两个 worker 进程，而不是在一个进程里硬塞两个大模型。
+
+### 两阶段命令
+
+Stage 1 只跑 VLM：
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 \
+python3 -m teletron.safety_edit.teacher_pipeline.run \
+  --config examples/teleai/config/safety_edit_teacher_qwen_vlm_stage.yaml \
+  --input /workplace/hyx/safety_edit_sources/unsafe_bench_debug/source_manifest.jsonl \
+  --output-dir /workplace/hyx/safety_edit_teacher_qwen_vlm/unsafe_bench_debug \
+  --limit 5 \
+  --log-level DEBUG
+```
+
+Stage 2 只跑 editor，输入 Stage 1 的 `manifest.jsonl`：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 \
+python3 -m teletron.safety_edit.teacher_pipeline.run \
+  --config examples/teleai/config/safety_edit_teacher_qwen_editor_stage.yaml \
+  --input /workplace/hyx/safety_edit_teacher_qwen_vlm/unsafe_bench_debug/manifest.jsonl \
+  --output-dir /workplace/hyx/safety_edit_teacher_qwen_editor/unsafe_bench_debug \
+  --limit 5 \
+  --log-level DEBUG
+```
+
+如果一张 H100 放不下 Qwen-Image-Edit，把 editor 配置里的 `device_map` 改为 `balanced` 或 `auto`，并用两张卡：
+
+```yaml
+editor:
+  params:
+    device_map: balanced
+```
 
 ## 接入其他真实本地模型
 

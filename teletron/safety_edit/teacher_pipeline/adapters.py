@@ -97,7 +97,7 @@ class JsonPlanVLMTeacher:
             )
         return TeacherPlan(
             teacher_prompt=row.get("teacher_prompt") or row.get("edit_instruction") or "no edit needed",
-            safe_flag=bool(row.get("safe_flag", False)),
+            safe_flag=parse_bool(row.get("safe_flag", False)),
             risk_type=row.get("risk_type", "unknown"),
             risk_description=row.get("risk_description", ""),
             edit_region=row.get("edit_region"),
@@ -105,6 +105,59 @@ class JsonPlanVLMTeacher:
             raw_response=row,
             metadata={"adapter": self.__class__.__name__},
         )
+
+
+class ManifestReplayVLMTeacher:
+    """Replay VLM plan fields from a prior teacher manifest.
+
+    This is intended for two-stage generation:
+    stage 1 writes VLM plan/hidden with a cheap editor;
+    stage 2 reuses those fields and only runs the image editor.
+    """
+
+    def __init__(self, hidden_root: str | None = None, strict_hidden: bool = False) -> None:
+        self.hidden_root = Path(hidden_root) if hidden_root else None
+        self.strict_hidden = strict_hidden
+
+    def plan(
+        self,
+        image_path: Path,
+        image: Image.Image,
+        source_metadata: dict[str, Any] | None = None,
+    ) -> TeacherPlan:
+        source_metadata = source_metadata or {}
+        hidden_path = source_metadata.get("vlm_hidden_path")
+        manifest_root = source_metadata.get("manifest_root")
+        hidden = self._load_hidden(hidden_path, manifest_root=manifest_root) if hidden_path else None
+        return TeacherPlan(
+            teacher_prompt=source_metadata.get("teacher_prompt") or "no edit needed",
+            safe_flag=parse_bool(source_metadata.get("safe_flag", False)),
+            risk_type=source_metadata.get("risk_type", "unknown"),
+            risk_description=source_metadata.get("risk_description", ""),
+            edit_region=source_metadata.get("edit_region"),
+            no_edit_reason=source_metadata.get("no_edit_reason"),
+            vlm_hidden=hidden,
+            raw_response=source_metadata,
+            metadata={
+                "adapter": self.__class__.__name__,
+                "replayed_hidden_path": hidden_path,
+                "loaded_hidden": hidden is not None,
+            },
+        )
+
+    def _load_hidden(self, hidden_path: str, manifest_root: str | None = None) -> Any | None:
+        path = Path(hidden_path)
+        if self.hidden_root is not None and not path.is_absolute():
+            path = self.hidden_root / path
+        elif manifest_root is not None and not path.is_absolute():
+            path = Path(manifest_root) / path
+        if not path.exists():
+            if self.strict_hidden:
+                raise FileNotFoundError(f"Missing replayed hidden: {path}")
+            return None
+        if torch is not None:
+            return torch.load(path, map_location="cpu")
+        return json.loads(path.read_text())
 
 
 class CopyEditorTeacher:
@@ -203,3 +256,12 @@ def nested_constant(shape: tuple[int, ...], value: float) -> Any:
     if len(shape) == 0:
         return value
     return [nested_constant(shape[1:], value) for _ in range(shape[0])]
+
+
+def parse_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    return text in {"true", "1", "yes", "safe", "benign"}

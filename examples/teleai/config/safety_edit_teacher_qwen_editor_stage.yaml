@@ -1,0 +1,35 @@
+metadata:
+  teacher_stage: qwen_editor_only
+  teacher_vlm: replay-from-vlm-stage
+  teacher_editor: Qwen/Qwen-Image-Edit
+
+vlm:
+  target: teletron.safety_edit.teacher_pipeline.adapters:ManifestReplayVLMTeacher
+  params:
+    strict_hidden: false
+
+editor:
+  target: teletron.safety_edit.teacher_pipeline.qwen_adapters:LocalQwenImageEditTeacher
+  params:
+    model_path: /workplace/hyx/models/Qwen-Image-Edit
+    device: cuda
+    device_map: null
+    dtype: bfloat16
+    num_inference_steps: 50
+    true_cfg_scale: 4.0
+    negative_prompt: " "
+    seed: 0
+    skip_safe_editor: true
+    extract_condition: true
+
+verifier:
+  target: teletron.safety_edit.teacher_pipeline.adapters:PixelDiffVerifier
+  params:
+    safe_mean_abs_diff_max: 2.0
+
+writer:
+  output_dir: ./teacher_data/safety_edit_qwen_editor_stage
+  copy_images: true
+  include_rejected: true
+  image_format: jpg
+

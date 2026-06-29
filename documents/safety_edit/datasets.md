@@ -269,6 +269,26 @@ python3 -m teletron.safety_edit.teacher_pipeline.run \
   --log-level DEBUG
 ```
 
+两张 H100 上建议用两阶段 Qwen 教师，避免 VLM 和 editor 同进程 OOM：
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 \
+python3 -m teletron.safety_edit.teacher_pipeline.run \
+  --config examples/teleai/config/safety_edit_teacher_qwen_vlm_stage.yaml \
+  --input /tmp/safety_edit_sources/unsafe_bench_debug/source_manifest.jsonl \
+  --output-dir /tmp/safety_edit_teacher_qwen_vlm/unsafe_bench_debug \
+  --limit 10 \
+  --log-level DEBUG
+
+CUDA_VISIBLE_DEVICES=0 \
+python3 -m teletron.safety_edit.teacher_pipeline.run \
+  --config examples/teleai/config/safety_edit_teacher_qwen_editor_stage.yaml \
+  --input /tmp/safety_edit_teacher_qwen_vlm/unsafe_bench_debug/manifest.jsonl \
+  --output-dir /tmp/safety_edit_teacher_qwen_editor/unsafe_bench_debug \
+  --limit 10 \
+  --log-level DEBUG
+```
+
 ## 第一批建议
 
 ```text

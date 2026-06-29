@@ -1,0 +1,32 @@
+metadata:
+  teacher_stage: qwen_vlm_only
+  teacher_vlm: Qwen/Qwen3.6-27B
+  teacher_editor: copy-editor-placeholder
+
+vlm:
+  target: teletron.safety_edit.teacher_pipeline.qwen_adapters:LocalQwen36VLMTeacher
+  params:
+    model_path: /workplace/hyx/models/Qwen3.6-27B
+    device_map: auto
+    dtype: bfloat16
+    max_new_tokens: 768
+    extract_hidden: true
+    hidden_layer: -1
+    hidden_strategy: all
+
+editor:
+  target: teletron.safety_edit.teacher_pipeline.adapters:CopyEditorTeacher
+  params:
+    condition_shape: [1, 1]
+
+verifier:
+  target: teletron.safety_edit.teacher_pipeline.adapters:AcceptAllVerifier
+  params:
+    score: 1.0
+
+writer:
+  output_dir: ./teacher_data/safety_edit_qwen_vlm_stage
+  copy_images: true
+  include_rejected: true
+  image_format: jpg
+
