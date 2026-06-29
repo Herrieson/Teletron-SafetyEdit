@@ -1,0 +1,28 @@
+metadata:
+  teacher_vlm: static-smoke-test
+  teacher_editor: copy-editor-smoke-test
+
+vlm:
+  target: teletron.safety_edit.teacher_pipeline.adapters:StaticVLMTeacher
+  params:
+    teacher_prompt: "no edit needed"
+    safe_flag: true
+    risk_type: "none"
+    hidden_shape: [16, 64]
+
+editor:
+  target: teletron.safety_edit.teacher_pipeline.adapters:CopyEditorTeacher
+  params:
+    condition_shape: [16, 64]
+
+verifier:
+  target: teletron.safety_edit.teacher_pipeline.adapters:PixelDiffVerifier
+  params:
+    safe_mean_abs_diff_max: 2.0
+
+writer:
+  output_dir: "./teacher_data/safety_edit_static"
+  copy_images: true
+  include_rejected: true
+  image_format: "jpg"
+
