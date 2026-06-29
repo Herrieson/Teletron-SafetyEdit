@@ -8,6 +8,7 @@ datasets
 safetensors
 einops
 transformers
+accelerate
 ftfy
 # opencv-python==4.10.0.84
 controlnet_aux

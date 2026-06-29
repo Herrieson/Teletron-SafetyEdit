@@ -78,7 +78,7 @@ class LocalQwen36VLMTeacher:
 
         kwargs = {
             "trust_remote_code": trust_remote_code,
-            "torch_dtype": _resolve_torch_dtype(self.torch, dtype),
+            "dtype": _resolve_torch_dtype(self.torch, dtype),
         }
         if device_map is not None:
             kwargs["device_map"] = device_map
@@ -429,4 +429,3 @@ def _require_diffusers() -> Any:
     except ModuleNotFoundError as exc:
         raise ImportError("LocalQwenImageEditTeacher requires diffusers.") from exc
     return diffusers
-
