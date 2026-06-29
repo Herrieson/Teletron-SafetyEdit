@@ -1,0 +1,41 @@
+metadata:
+  teacher_vlm: Qwen/Qwen3.6-27B
+  teacher_editor: Qwen/Qwen-Image-Edit
+  note: "Real local Qwen teacher pipeline. Adjust model paths/devices for your machine."
+
+vlm:
+  target: teletron.safety_edit.teacher_pipeline.qwen_adapters:LocalQwen36VLMTeacher
+  params:
+    model_path: Qwen/Qwen3.6-27B
+    device_map: auto
+    dtype: bfloat16
+    max_new_tokens: 768
+    extract_hidden: true
+    hidden_layer: -1
+    hidden_strategy: all
+
+editor:
+  target: teletron.safety_edit.teacher_pipeline.qwen_adapters:LocalQwenImageEditTeacher
+  params:
+    model_path: Qwen/Qwen-Image-Edit
+    device: cuda
+    device_map: null
+    dtype: bfloat16
+    num_inference_steps: 50
+    true_cfg_scale: 4.0
+    negative_prompt: " "
+    seed: 0
+    skip_safe_editor: true
+    extract_condition: true
+
+verifier:
+  target: teletron.safety_edit.teacher_pipeline.adapters:PixelDiffVerifier
+  params:
+    safe_mean_abs_diff_max: 2.0
+
+writer:
+  output_dir: ./teacher_data/safety_edit_qwen
+  copy_images: true
+  include_rejected: true
+  image_format: jpg
+

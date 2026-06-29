@@ -165,7 +165,7 @@ teacher_data/
 内置静态 adapter 可用于验证落盘链路：
 
 ```bash
-python -m teletron.safety_edit.teacher_pipeline.run \
+python3 -m teletron.safety_edit.teacher_pipeline.run \
   --config examples/teleai/config/safety_edit_teacher_static.yaml \
   --input /path/to/images \
   --output-dir /tmp/safety_edit_teacher_static \
@@ -174,7 +174,122 @@ python -m teletron.safety_edit.teacher_pipeline.run \
 
 这个配置使用 `StaticVLMTeacher`、`CopyEditorTeacher` 和 `PixelDiffVerifier`，不会调用真实大模型。
 
-## 接入真实本地模型
+## Qwen 本地教师配置
+
+当前已提供 Qwen 组合的 adapter：
+
+```text
+VLM:
+  teletron.safety_edit.teacher_pipeline.qwen_adapters:LocalQwen36VLMTeacher
+
+Editor:
+  teletron.safety_edit.teacher_pipeline.qwen_adapters:LocalQwenImageEditTeacher
+```
+
+示例配置：
+
+```text
+examples/teleai/config/safety_edit_teacher_qwen.yaml
+```
+
+运行示例：
+
+```bash
+python3 -m teletron.safety_edit.teacher_pipeline.run \
+  --config examples/teleai/config/safety_edit_teacher_qwen.yaml \
+  --input /path/to/images \
+  --output-dir /path/to/teacher_data_qwen \
+  --limit 8
+```
+
+### LocalQwen36VLMTeacher
+
+该 adapter 使用本地 `transformers` 加载 `Qwen/Qwen3.6-27B`，输出：
+
+```text
+teacher_prompt
+safe_flag
+risk_type
+risk_description
+edit_region
+vlm_hidden
+```
+
+默认提示词要求 VLM 只返回 JSON。解析失败时，会把原始文本作为 `teacher_prompt`，并在 `raw_response.parse_error` 中记录错误。
+
+关键配置：
+
+```yaml
+vlm:
+  target: teletron.safety_edit.teacher_pipeline.qwen_adapters:LocalQwen36VLMTeacher
+  params:
+    model_path: Qwen/Qwen3.6-27B
+    device_map: auto
+    dtype: bfloat16
+    max_new_tokens: 768
+    extract_hidden: true
+    hidden_layer: -1
+    hidden_strategy: all
+```
+
+`hidden_strategy` 可选：
+
+```text
+all   保存 [N, D] token hidden states
+mean  保存 pooled hidden states
+last  保存最后 token hidden states
+```
+
+第一阶段蒸馏建议先用 `all`，如果磁盘或显存压力太大，再改成 `mean` 或后续自定义图像 token 选择策略。
+
+### LocalQwenImageEditTeacher
+
+该 adapter 使用 Diffusers 加载 `Qwen/Qwen-Image-Edit`。它会：
+
+```text
+teacher_prompt -> pipeline.encode_prompt(...) -> teacher_condition
+image + teacher_prompt -> pipeline(...) -> teacher_output
+```
+
+`teacher_condition` 是 best-effort 提取：不同 diffusers 版本的 `encode_prompt` 签名可能不同，adapter 会尝试几组常见参数，并把成功返回的 tensor detach 到 CPU 后保存。如果当前 pipeline 没有 `encode_prompt` 或签名不兼容，会保存一个包含 warning/error 的字典，方便后续排查。
+
+关键配置：
+
+```yaml
+editor:
+  target: teletron.safety_edit.teacher_pipeline.qwen_adapters:LocalQwenImageEditTeacher
+  params:
+    model_path: Qwen/Qwen-Image-Edit
+    device: cuda
+    dtype: bfloat16
+    num_inference_steps: 50
+    true_cfg_scale: 4.0
+    negative_prompt: " "
+    seed: 0
+    skip_safe_editor: true
+    extract_condition: true
+```
+
+`skip_safe_editor: true` 表示当 VLM 判断 `safe_flag=true` 时，不运行完整编辑采样，直接把原图作为 `teacher_output`。它仍会尝试保存 `"no edit needed"` 的 `teacher_condition`，用于训练 no-op/gate 相关能力。
+
+## 两张或四张 H100 的建议跑法
+
+第一版建议优先稳定，不要过早做并发：
+
+```text
+2 张 H100:
+  方案 A: device_map=auto 串行跑 Qwen3.6 + Qwen-Image-Edit
+  方案 B: 先单独生成 VLM plan/hidden，再单独跑 editor 补 condition/output
+
+4 张 H100:
+  GPU 0-1: Qwen3.6-27B
+  GPU 2:   Qwen-Image-Edit
+  GPU 3:   verifier 或对照 editor
+```
+
+如果 Qwen3.6 和 Qwen-Image-Edit 同进程争显存，优先拆成两个阶段或两个 worker 进程，而不是在一个进程里硬塞两个大模型。
+
+## 接入其他真实本地模型
 
 新增一个本地 adapter 文件，例如：
 
@@ -189,7 +304,7 @@ class LocalQwenVLMTeacher:
         ...
         return TeacherPlan(...)
 
-class LocalWanEditorTeacher:
+class LocalImageEditorTeacher:
     def __init__(self, model_path, device="cuda"):
         ...
 
@@ -208,7 +323,7 @@ vlm:
     device: cuda
 
 editor:
-  target: my_project.safety_edit_adapters:LocalWanEditorTeacher
+  target: my_project.safety_edit_adapters:LocalImageEditorTeacher
   params:
     model_path: /path/to/editor
     device: cuda
@@ -231,4 +346,3 @@ image_path
 teacher_output_path
 teacher_mask_path
 ```
-
