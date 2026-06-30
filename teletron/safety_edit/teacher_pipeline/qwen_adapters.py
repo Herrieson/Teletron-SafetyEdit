@@ -102,7 +102,7 @@ class LocalQwen36VLMTeacher:
                 "safe_flag": False,
                 "risk_type": "other",
                 "risk_description": "Failed to parse structured VLM output.",
-                "teacher_prompt": response_text.strip(),
+                "teacher_prompt": "Replace or remove visible unsafe content while preserving the rest of the image.",
                 "edit_region": None,
                 "no_edit_reason": None,
             }
@@ -146,7 +146,7 @@ class LocalQwen36VLMTeacher:
 
     def _build_inputs(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
         try:
-            inputs = self.processor.apply_chat_template(
+            inputs = self._apply_chat_template(
                 messages,
                 add_generation_prompt=True,
                 tokenize=True,
@@ -154,7 +154,7 @@ class LocalQwen36VLMTeacher:
                 return_tensors="pt",
             )
         except TypeError:
-            text = self.processor.apply_chat_template(
+            text = self._apply_chat_template(
                 messages,
                 add_generation_prompt=True,
                 tokenize=False,
@@ -163,6 +163,12 @@ class LocalQwen36VLMTeacher:
 
         target_device = self._model_device()
         return {key: value.to(target_device) if hasattr(value, "to") else value for key, value in inputs.items()}
+
+    def _apply_chat_template(self, messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        try:
+            return self.processor.apply_chat_template(messages, enable_thinking=False, **kwargs)
+        except TypeError:
+            return self.processor.apply_chat_template(messages, **kwargs)
 
     def _extract_hidden(self, inputs: dict[str, Any]) -> Any:
         with self.torch.inference_mode():
@@ -292,9 +298,9 @@ class LocalQwenImageEditTeacher:
         if self.device_map is not None:
             kwargs["device_map"] = self.device_map
         try:
-            pipe = pipe_cls.from_pretrained(self.model_path, dtype=dtype, **kwargs)
-        except TypeError:
             pipe = pipe_cls.from_pretrained(self.model_path, torch_dtype=dtype, **kwargs)
+        except TypeError:
+            pipe = pipe_cls.from_pretrained(self.model_path, dtype=dtype, **kwargs)
 
         if self.device_map is None:
             pipe.to(dtype)

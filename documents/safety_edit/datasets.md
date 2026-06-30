@@ -306,3 +306,109 @@ Held-out:
   SafeTag-VL-3K 300
   Meme-Safety-Bench 300
 ```
+
+## 从 teacher 输出构建训练数据集
+
+真实 teacher pipeline 跑完后，使用 `teletron.safety_edit.build_dataset` 把一个或多个 teacher run 的
+`manifest.jsonl` 合并成训练入口。
+
+第一阶段 condition bridge 训练只要求：
+
+```text
+vlm_hidden_path
+teacher_condition_path
+safe_flag
+risk_type
+```
+
+构建命令：
+
+```bash
+uv run python -m teletron.safety_edit.build_dataset build \
+  --input /workplace/hyx/safety_edit_teacher_qwen \
+  --output-dir /workplace/hyx/safety_edit_datasets/qwen_unsafe_bench_debug \
+  --stage condition \
+  --val-ratio 0.1 \
+  --test-ratio 0 \
+  --seed 0 \
+  --inspect-tensors \
+  --log-rejected
+```
+
+输出：
+
+```text
+/workplace/hyx/safety_edit_datasets/qwen_unsafe_bench_debug/
+├── manifest.jsonl
+├── stats.json
+├── rejected.jsonl
+└── splits/
+    ├── train.jsonl
+    ├── val.jsonl
+    └── test.jsonl
+```
+
+默认行为：
+
+```text
+只保留 accepted=true
+校验 required asset 是否存在
+按 id 去重
+不复制 teacher 资产，manifest 内保存绝对路径
+```
+
+如果要把资产复制到数据集目录，增加：
+
+```bash
+--copy-assets
+```
+
+检查已有数据统计：
+
+```bash
+uv run python -m teletron.safety_edit.build_dataset stats \
+  --input /workplace/hyx/safety_edit_datasets/qwen_unsafe_bench_debug/manifest.jsonl \
+  --inspect-tensors
+```
+
+当前 debug 数据集构建结果：
+
+```text
+rows: 30
+train: 27
+val: 3
+test: 0
+safe_flag=true: 21
+safe_flag=false: 9
+risk_type:
+  none: 21
+  weapon: 5
+  other: 3
+  self_harm: 1
+```
+
+注意：
+
+```text
+teacher_condition.prompt_embeds token 长度不固定。
+vlm_hidden token 长度也不固定。
+```
+
+第一阶段训练的 collator / model 需要支持变长序列，例如 padding、attention mask，或在
+`ConditionBridge` 内使用 Perceiver/CrossAttention resampler。
+
+训练读取接口：
+
+```python
+from teletron.datasets.safety_edit_dataset import SafetyEditDataset
+
+dataset = SafetyEditDataset(
+    manifest_path="/workplace/hyx/safety_edit_datasets/qwen_unsafe_bench_debug/splits/train.jsonl",
+    load_tensors=True,
+    load_images=False,
+)
+
+sample = dataset[0]
+vlm_hidden = sample["vlm_hidden"]
+teacher_condition = sample["teacher_condition"]
+```

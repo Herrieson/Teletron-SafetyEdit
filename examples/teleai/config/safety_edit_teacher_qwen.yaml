@@ -7,7 +7,8 @@ vlm:
   target: teletron.safety_edit.teacher_pipeline.qwen_adapters:LocalQwen36VLMTeacher
   params:
     model_path: /workplace/hyx/models/Qwen3.6-27B
-    device_map: auto
+    device: cuda:0
+    device_map: null
     dtype: bfloat16
     max_new_tokens: 768
     extract_hidden: true
@@ -18,7 +19,7 @@ editor:
   target: teletron.safety_edit.teacher_pipeline.qwen_adapters:LocalQwenImageEditTeacher
   params:
     model_path: /workplace/hyx/models/Qwen-Image-Edit
-    device: cuda
+    device: cuda:1
     device_map: null
     dtype: bfloat16
     num_inference_steps: 50
